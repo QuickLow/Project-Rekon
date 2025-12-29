@@ -93,7 +93,7 @@
                         <h3>{{ $total }}</h3>
                     </div>
                 </div>
-                <div class="col-md-4">
+                {{-- <div class="col-md-4">
                     <div class="card p-3">
                         <small class="text-success">MATCH</small>
                         <h3>{{ $match }}</h3>
@@ -103,8 +103,8 @@
                     <div class="card p-3 border-danger border-2">
                         <small class="text-danger">MISMATCH</small>
                         <h3 class="text-danger">{{ $mismatch }}</h3>
-                    </div>
-                </div>
+                    </div> --}}
+                {{-- </div> --}}
             </div>
 
             {{-- TABLE --}}
