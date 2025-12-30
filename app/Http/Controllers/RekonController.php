@@ -75,10 +75,10 @@ class RekonController extends Controller
             'project_name' => $request->project_name
         ]);
         
-        // PARSE 3 FILE TEMPLATE (GUDANG, TA, MITRA)
-        $rowsGudang = $this->parseTemplate($gudangFile);
-        $rowsTA     = $this->parseTemplate($telkomFile);
-        $rowsMitra  = $this->parseTemplate($mitraFile);
+        // PARSE 3 FILE TEMPLATE (GUDANG, TA, MITRA) + VALIDASI TIPE FILE
+        $rowsGudang = $this->parseTemplate($gudangFile, 'GUDANG');
+        $rowsTA     = $this->parseTemplate($telkomFile, 'TA');
+        $rowsMitra  = $this->parseTemplate($mitraFile, 'MITRA');
 
         // GABUNGKAN BERDASARKAN (MITRA, LOP, DESIGNATOR)
         $index = [];
@@ -168,7 +168,7 @@ class RekonController extends Controller
     }
 }
 
-private function parseTemplate($file)
+private function parseTemplate($file, ?string $expectedSource = null)
 {
     $disk = config('filesystems.default');
     $path = $file->store('uploads', $disk);
@@ -216,6 +216,49 @@ private function parseTemplate($file)
     }
     $sheet = $spreadsheet->getActiveSheet();
     $rows = $sheet->toArray(null, true, true, true);
+
+    // Validasi tipe file agar Gudang/TA/Mitra tidak tertukar.
+    // Template terbaru punya baris 1: REKON_TEMPLATE;GUDANG (atau TA/MITRA)
+    $expectedSource = $expectedSource ? strtoupper(trim($expectedSource)) : null;
+    $detectedSource = null;
+    $maxSourceCheck = min(3, count($rows));
+    for ($idx = 1; $idx <= $maxSourceCheck; $idx++) {
+        $r = $rows[$idx] ?? [];
+        $marker = strtoupper(trim((string)($r['A'] ?? '')));
+        if (in_array($marker, ['REKON_TEMPLATE', 'TEMPLATE', 'SOURCE', 'TIPE FILE'], true)) {
+            $value = strtoupper(trim((string)($r['B'] ?? '')));
+            if ($value !== '') {
+                // Normalisasi beberapa variasi penulisan
+                if (in_array($value, ['TELKOM', 'TELKOM AKSES', 'TELKOMAKSES'], true)) {
+                    $value = 'TA';
+                }
+                $detectedSource = $value;
+                break;
+            }
+        }
+    }
+
+    if ($expectedSource !== null) {
+        if ($detectedSource === null) {
+            throw new \Exception(
+                'File yang diupload tidak memiliki penanda tipe (REKON_TEMPLATE). ' .
+                'Silakan download template terbaru dari halaman Upload, isi data, lalu upload kembali.'
+            );
+        }
+
+        if ($detectedSource !== $expectedSource) {
+            $labelExpected = $expectedSource === 'TA' ? 'TA (Telkom Akses)' : $expectedSource;
+            $labelDetected = $detectedSource === 'TA' ? 'TA (Telkom Akses)' : $detectedSource;
+            throw new \Exception(
+                sprintf(
+                    'File yang Anda upload pada kolom %s terdeteksi sebagai %s. ' .
+                    'Kemungkinan file tertukar. Silakan upload file yang sesuai.',
+                    $labelExpected,
+                    $labelDetected
+                )
+            );
+        }
+    }
 
     // Deteksi header kolom (coba di 3 baris awal). Jika tidak ditemukan, gunakan fallback A,B,C,D.
     $colMap = ['mitra' => null, 'lop' => null, 'designator' => null, 'jumlah' => null];

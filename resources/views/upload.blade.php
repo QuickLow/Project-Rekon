@@ -119,6 +119,7 @@
                                     <i class="fas fa-file-excel upload-icon"></i>
                                     <h5>Klik untuk Upload Excel/CSV</h5>
                                     <p class="text-muted small">Format: .xlsx / .xls / .csv</p>
+                                    <p class="text-muted small mb-0">Gunakan template terbaru (baris <b>REKON_TEMPLATE</b> jangan dihapus). File yang tertukar akan ditolak.</p>
                                     <div id="preview_gudang" class="text-success fw-bold mt-2"></div>
                                 </label>
                                     <input type="file" accept=".xlsx,.xls,.csv,.xlsm,.xlsb"
@@ -147,6 +148,7 @@
                                     <i class="fas fa-file-excel upload-icon"></i>
                                     <h5>Klik untuk Upload Excel/CSV</h5>
                                     <p class="text-muted small">Format: .xlsx / .xls / .csv</p>
+                                    <p class="text-muted small mb-0">Gunakan template terbaru (baris <b>REKON_TEMPLATE</b> jangan dihapus). File yang tertukar akan ditolak.</p>
                                     <div id="preview_telkom" class="text-success fw-bold mt-2"></div>
                                 </label>
                                     <input type="file" accept=".xlsx,.xls,.csv,.xlsm,.xlsb"
@@ -176,6 +178,7 @@
                                     <i class="fas fa-file-excel upload-icon"></i>
                                     <h5>Klik untuk Upload Excel/CSV</h5>
                                     <p class="text-muted small">Format: .xlsx / .xls / .csv</p>
+                                    <p class="text-muted small mb-0">Gunakan template terbaru (baris <b>REKON_TEMPLATE</b> jangan dihapus). File yang tertukar akan ditolak.</p>
                                     <div id="preview_mitra" class="text-success fw-bold mt-2"></div>
                                 </label>
                                     <input type="file" accept=".xlsx,.xls,.csv,.xlsm,.xlsb"
