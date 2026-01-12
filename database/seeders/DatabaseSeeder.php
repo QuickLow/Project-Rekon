@@ -15,11 +15,7 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        // Tidak membuat user default agar tidak ada kredensial bawaan.
+        // Buat akun pertama (super admin) lewat halaman setup atau halaman Kelola User.
     }
 }

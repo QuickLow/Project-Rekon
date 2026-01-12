@@ -10,25 +10,151 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class RekonController extends Controller
 {
+    private function normalizeDesignatorKey(string $value): string
+    {
+        $value = trim($value);
+        $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
+        return strtoupper($value);
+    }
+
+    /**
+     * Map designator Gudang (alias) -> designator versi TA/Mitra (canonical).
+     *
+     * Opsional: kalau file mapping ada di storage/app/designator_map_gudang.csv,
+     * formatnya: canonical,gudang_alias (gudang_alias boleh dipisah koma untuk banyak alias).
+     */
+    private function loadGudangDesignatorMap(): array
+    {
+        $map = [];
+
+        // 1) Coba baca dari file CSV agar gampang ditambah tanpa ubah kode.
+        $csvPath = storage_path('app/designator_map_gudang.csv');
+        if (is_file($csvPath)) {
+            $lines = @file($csvPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+            foreach ($lines as $line) {
+                $line = trim((string) $line);
+                if ($line === '' || str_starts_with($line, '#')) continue;
+                $cols = str_getcsv($line);
+                $canonical = trim((string) ($cols[0] ?? ''));
+                $aliasesRaw = trim((string) ($cols[1] ?? ''));
+                if ($canonical === '' || $aliasesRaw === '') continue;
+
+                $canonicalKey = $this->normalizeDesignatorKey($canonical);
+                $map[$canonicalKey] = $canonical; // canonical tetap map ke dirinya
+
+                $aliases = array_map('trim', explode(',', $aliasesRaw));
+                foreach ($aliases as $alias) {
+                    if ($alias === '') continue;
+                    $map[$this->normalizeDesignatorKey($alias)] = $canonical;
+                }
+            }
+        }
+
+        // 2) Fallback hardcoded (sesuai daftar yang user kirim via screenshot).
+        // Hanya pasangan yang jelas (1:1) agar tidak menebak yang ambigu.
+        $fallbackPairs = [
+            // canonical => gudang
+            'PL-RING' => 'KLEM-RING-5-LUBANG',
+            'PU-AS-DE-50/70' => 'DEAD-END-CLAMP',
+            'PU-AS-SC' => 'SS-TIANG-CLAMP',
+            'PU-AS-HL' => 'HELICAL-GRIP-LKP',
+            'ODP SOLID-PB-16 AS' => 'ODP-SOLID-1-16-L',
+            'ODP SOLID-PB-8 AS' => 'ODP-SOLID-8-L',
+            'SLACK-SUPP' => 'SLACK-S',
+            'DD-HDPE-40/33' => 'DD-HDPE-40-1C',
+        ];
+
+        foreach ($fallbackPairs as $canonical => $alias) {
+            $canonical = trim((string) $canonical);
+            $alias = trim((string) $alias);
+            if ($canonical === '' || $alias === '') continue;
+            $map[$this->normalizeDesignatorKey($canonical)] = $canonical;
+            $map[$this->normalizeDesignatorKey($alias)] = $canonical;
+        }
+
+        return $map;
+    }
+
+    private function mapGudangDesignatorToCanonical(string $designator): string
+    {
+        $designator = trim($designator);
+        if ($designator === '') return '';
+
+        $map = $this->loadGudangDesignatorMap();
+
+        // Jika cell mengandung beberapa nama dipisah koma, coba map per token.
+        if (str_contains($designator, ',')) {
+            $tokens = array_values(array_filter(array_map('trim', explode(',', $designator)), fn ($t) => $t !== ''));
+            $canonicals = [];
+            foreach ($tokens as $t) {
+                $key = $this->normalizeDesignatorKey($t);
+                $canonicals[] = $map[$key] ?? $t;
+            }
+            $unique = array_values(array_unique($canonicals));
+            if (count($unique) === 1) {
+                return (string) $unique[0];
+            }
+            return $designator;
+        }
+
+        $key = $this->normalizeDesignatorKey($designator);
+        return $map[$key] ?? $designator;
+    }
+
     public function index()
     {
         $data = RekonProject::latest()->paginate(10);
 
+        $totalPo = RekonProject::count();
+
+        $lopAgg = DB::table('rekon_items')
+            ->select(
+                'project_id',
+                'mitra_name',
+                'lop_name',
+                DB::raw('MAX(CASE WHEN COALESCE(qty_gudang, -1) != COALESCE(qty_mitra, -1) OR COALESCE(qty_ta, -1) != COALESCE(qty_mitra, -1) THEN 1 ELSE 0 END) as has_diff')
+            )
+            ->groupBy('project_id', 'mitra_name', 'lop_name');
+
+        $totalBoq = DB::query()->fromSub($lopAgg, 'lops')->count();
+        $boqSelisih = DB::query()->fromSub($lopAgg, 'lops')->where('has_diff', 1)->count();
+        $boqLurus = DB::query()->fromSub($lopAgg, 'lops')->where('has_diff', 0)->count();
+
         return view('dashboard', [
             'data' => $data,
-            'total' => $data->total(),
-            'match' => 0,
-            'mismatch' => 0,
+            'total_po' => $totalPo,
+            'total_boq' => $totalBoq,
+            'boq_lurus' => $boqLurus,
+            'boq_selisih' => $boqSelisih,
             'listLokasi' => []
         ]);
     }
 
-    public function create()
+    public function destroyProject($id)
     {
-        return view('upload');
+        $project = RekonProject::findOrFail($id);
+        $project->delete();
+
+        return redirect()->route('dashboard')->with('success', 'Project berhasil dihapus.');
     }
 
-   public function store(Request $request)
+    public function create()
+    {
+        return view('upload', [
+            'project' => null,
+        ]);
+    }
+
+    public function editUpload($id)
+    {
+        $project = RekonProject::findOrFail($id);
+
+        return view('upload', [
+            'project' => $project,
+        ]);
+    }
+
+    public function store(Request $request)
 {
     // TAMPILKAN ERROR JIKA ADA, JANGAN DISEMBUNYIKAN
     try {
@@ -49,6 +175,7 @@ class RekonController extends Controller
         };
 
         $request->validate([
+            'project_id'   => 'nullable|integer|exists:rekon_projects,id',
             'project_name' => 'required|string',
             'file_gudang'  => ['required', 'file', 'max:51200', $fileRule],
             'file_telkom'  => ['required', 'file', 'max:51200', $fileRule],
@@ -69,13 +196,56 @@ class RekonController extends Controller
         $gudangFile = $request->file('file_gudang');
         $telkomFile = $request->file('file_telkom');
         $mitraFile = $request->file('file_mitra');
+
+        // Validasi berdasarkan NAMA FILE agar tidak tertukar.
+        // Contoh nama file yang disarankan:
+        // - gudang_2025-12.csv
+        // - ta_2025-12.csv / telkom_akses_2025-12.csv
+        // - mitra_2025-12.csv
+        $detectSource = function (string $filename): ?string {
+            $name = strtoupper($filename);
+            // Normalisasi sederhana: hilangkan spasi agar "TELKOM AKSES" juga cocok.
+            $flat = str_replace(' ', '', $name);
+
+            if (str_contains($flat, 'GUDANG')) return 'GUDANG';
+            if (str_contains($flat, 'MITRA')) return 'MITRA';
+            if (str_contains($flat, 'TA') || str_contains($flat, 'TELKOM') || str_contains($flat, 'TELKOMAKSES') || str_contains($flat, 'TELKOM_AKSES')) return 'TA';
+            return null;
+        };
+
+        $checkFile = function ($file, string $expected) use ($detectSource) {
+            $expected = strtoupper($expected);
+            $name = (string) $file->getClientOriginalName();
+            $detected = $detectSource($name);
+            if ($detected === null) {
+                throw new \Exception(
+                    "Nama file untuk {$expected} tidak terdeteksi. " .
+                    "Mohon beri nama file mengandung kata: " .
+                    ($expected === 'TA' ? "ta / telkom_akses" : strtolower($expected)) .
+                    ". Nama file Anda: {$name}"
+                );
+            }
+            if ($detected !== $expected) {
+                $labelExpected = $expected === 'TA' ? 'TA (Telkom Akses)' : $expected;
+                $labelDetected = $detected === 'TA' ? 'TA (Telkom Akses)' : $detected;
+                throw new \Exception(
+                    "File tertukar: input {$labelExpected} terdeteksi sebagai {$labelDetected}. " .
+                    "Nama file: {$name}"
+                );
+            }
+        };
+
+        $checkFile($gudangFile, 'GUDANG');
+        $checkFile($telkomFile, 'TA');
+        $checkFile($mitraFile, 'MITRA');
         
-        // SIMPAN PROJECT
-        $project = RekonProject::create([
-            'project_name' => $request->project_name
-        ]);
+        $overwriteProjectId = $request->input('project_id');
+        $overwriteProject = null;
+        if (!empty($overwriteProjectId)) {
+            $overwriteProject = RekonProject::findOrFail($overwriteProjectId);
+        }
         
-        // PARSE 3 FILE TEMPLATE (GUDANG, TA, MITRA) + VALIDASI TIPE FILE
+        // PARSE 3 FILE TEMPLATE (GUDANG, TA, MITRA)
         $rowsGudang = $this->parseTemplate($gudangFile, 'GUDANG');
         $rowsTA     = $this->parseTemplate($telkomFile, 'TA');
         $rowsMitra  = $this->parseTemplate($mitraFile, 'MITRA');
@@ -126,35 +296,53 @@ class RekonController extends Controller
             $index[$key]['qty_mitra'] += (float)($r['jumlah'] ?? 0);
         }
 
-        // SIMPAN KE TABEL REKON_ITEMS
-        $batch = [];
-        foreach ($index as $k => $v) {
-            $batch[] = [
-                'project_id'  => $project->id,
-                'mitra_name'  => $v['mitra_name'],
-                'lop_name'    => $v['lop_name'],
-                'designator'  => $v['designator'],
-                'qty_gudang'  => $v['qty_gudang'] ?? 0,
-                'qty_ta'      => $v['qty_ta'] ?? 0,
-                'qty_mitra'   => $v['qty_mitra'] ?? 0,
-                'created_at'  => now(),
-                'updated_at'  => now(),
-            ];
+        $uniqueCount = count($index);
+
+        if ($uniqueCount === 0) {
+            return back()->withInput()->with('error', 'Tidak ada baris valid yang terbaca dari file. Periksa header dan isi kolom.');
         }
-        if (!empty($batch)) {
-            DB::table('rekon_items')->insert($batch);
-        }
+
+        $project = null;
+        DB::transaction(function () use ($overwriteProject, $request, $index, &$project) {
+            if ($overwriteProject) {
+                $overwriteProject->project_name = $request->project_name;
+                $overwriteProject->save();
+
+                DB::table('rekon_items')->where('project_id', $overwriteProject->id)->delete();
+                $project = $overwriteProject;
+            } else {
+                $project = RekonProject::create([
+                    'project_name' => $request->project_name,
+                ]);
+            }
+
+            $batch = [];
+            foreach ($index as $v) {
+                $batch[] = [
+                    'project_id'  => $project->id,
+                    'mitra_name'  => $v['mitra_name'],
+                    'lop_name'    => $v['lop_name'],
+                    'designator'  => $v['designator'],
+                    'qty_gudang'  => $v['qty_gudang'] ?? 0,
+                    'qty_ta'      => $v['qty_ta'] ?? 0,
+                    'qty_mitra'   => $v['qty_mitra'] ?? 0,
+                    'created_at'  => now(),
+                    'updated_at'  => now(),
+                ];
+            }
+
+            if (!empty($batch)) {
+                DB::table('rekon_items')->insert($batch);
+            }
+        });
 
         // ARAHKAN KE HALAMAN LIST MITRA UNTUK PROYEK INI + ringkasan impor
         $summary = sprintf(
-            'Upload berhasil! Project: %s. Baris: Gudang %d, TA %d, Mitra %d. Item unik tersimpan: %d.',
+            '%s berhasil! Project: %s. Baris: Gudang %d, TA %d, Mitra %d. Item unik tersimpan: %d.',
+            $overwriteProject ? 'Upload ulang' : 'Upload',
             $request->project_name,
-            count($rowsGudang), count($rowsTA), count($rowsMitra), count($batch)
+            count($rowsGudang), count($rowsTA), count($rowsMitra), $uniqueCount
         );
-
-        if (count($batch) === 0) {
-            return back()->withInput()->with('error', 'Tidak ada baris valid yang terbaca dari file. Periksa header dan isi kolom.');
-        }
 
         return redirect()
             ->route('rekon', $project->id)
@@ -168,7 +356,7 @@ class RekonController extends Controller
     }
 }
 
-private function parseTemplate($file, ?string $expectedSource = null)
+private function parseTemplate($file, ?string $source = null)
 {
     $disk = config('filesystems.default');
     $path = $file->store('uploads', $disk);
@@ -217,49 +405,6 @@ private function parseTemplate($file, ?string $expectedSource = null)
     $sheet = $spreadsheet->getActiveSheet();
     $rows = $sheet->toArray(null, true, true, true);
 
-    // Validasi tipe file agar Gudang/TA/Mitra tidak tertukar.
-    // Template terbaru punya baris 1: REKON_TEMPLATE;GUDANG (atau TA/MITRA)
-    $expectedSource = $expectedSource ? strtoupper(trim($expectedSource)) : null;
-    $detectedSource = null;
-    $maxSourceCheck = min(3, count($rows));
-    for ($idx = 1; $idx <= $maxSourceCheck; $idx++) {
-        $r = $rows[$idx] ?? [];
-        $marker = strtoupper(trim((string)($r['A'] ?? '')));
-        if (in_array($marker, ['REKON_TEMPLATE', 'TEMPLATE', 'SOURCE', 'TIPE FILE'], true)) {
-            $value = strtoupper(trim((string)($r['B'] ?? '')));
-            if ($value !== '') {
-                // Normalisasi beberapa variasi penulisan
-                if (in_array($value, ['TELKOM', 'TELKOM AKSES', 'TELKOMAKSES'], true)) {
-                    $value = 'TA';
-                }
-                $detectedSource = $value;
-                break;
-            }
-        }
-    }
-
-    if ($expectedSource !== null) {
-        if ($detectedSource === null) {
-            throw new \Exception(
-                'File yang diupload tidak memiliki penanda tipe (REKON_TEMPLATE). ' .
-                'Silakan download template terbaru dari halaman Upload, isi data, lalu upload kembali.'
-            );
-        }
-
-        if ($detectedSource !== $expectedSource) {
-            $labelExpected = $expectedSource === 'TA' ? 'TA (Telkom Akses)' : $expectedSource;
-            $labelDetected = $detectedSource === 'TA' ? 'TA (Telkom Akses)' : $detectedSource;
-            throw new \Exception(
-                sprintf(
-                    'File yang Anda upload pada kolom %s terdeteksi sebagai %s. ' .
-                    'Kemungkinan file tertukar. Silakan upload file yang sesuai.',
-                    $labelExpected,
-                    $labelDetected
-                )
-            );
-        }
-    }
-
     // Deteksi header kolom (coba di 3 baris awal). Jika tidak ditemukan, gunakan fallback A,B,C,D.
     $colMap = ['mitra' => null, 'lop' => null, 'designator' => null, 'jumlah' => null];
     $headerRowIndex = null;
@@ -284,6 +429,7 @@ private function parseTemplate($file, ?string $expectedSource = null)
     $colMap['designator'] = $colMap['designator'] ?? 'C';
     $colMap['jumlah'] = $colMap['jumlah'] ?? 'D';
 
+
     $out = [];
     $lastMitra = '';
     $lastLop = '';
@@ -300,6 +446,31 @@ private function parseTemplate($file, ?string $expectedSource = null)
         if ($mitra !== '') $lastMitra = $mitra;
         if ($lop !== '') $lastLop = $lop;
         $designator = trim((string)($row[$colMap['designator']] ?? ''));
+        
+        // Normalisasi: hapus prefix "M-" di depan designator (semua file) agar merge key konsisten
+        if (str_starts_with($designator, 'M-')) {
+            $designator = substr($designator, 2);
+        }
+        
+        if (strtoupper((string) $source) === 'GUDANG' && $designator !== '') {
+            $designator = $this->mapGudangDesignatorToCanonical($designator);
+        }
+        // Beberapa file Excel hasil copy/merge membuat kolom LOP kosong,
+        // tapi kolom DESIGNATOR berisi gabungan: "<LOP> <DESIGNATOR>" (contoh: "MD... M-...").
+        // Jika terdeteksi, pecah otomatis agar 1 mitra bisa punya banyak LOP.
+        if ($lop === '' && $designator !== '') {
+            $normalized = preg_replace('/\x{00A0}/u', ' ', $designator) ?? $designator; // non-breaking space
+            $pos = strpos($normalized, 'M-');
+            if ($pos !== false && $pos > 0) {
+                $possibleLop = trim(substr($normalized, 0, $pos));
+                $possibleDesignator = trim(substr($normalized, $pos));
+                if ($possibleLop !== '' && $possibleDesignator !== '') {
+                    $lop = $possibleLop;
+                    $lastLop = $lop;
+                    $designator = $possibleDesignator;
+                }
+            }
+        }
         $jumlah = $row[$colMap['jumlah']] ?? 0;
         if ($designator === '' && ($jumlah === '' || $jumlah === null)) continue;
         // Bersihkan jumlah numerik (handle koma sebagai desimal)
@@ -344,9 +515,21 @@ private function parseTemplate($file, ?string $expectedSource = null)
 
    public function lopList($id, $mitra)
 {
-    // Daftar LOP untuk mitra tertentu
+    // Pastikan mitra memang ada di project ini (kalau tidak, 404)
+    $exists = DB::table('rekon_items')
+        ->where('project_id', $id)
+        ->where('mitra_name', $mitra)
+        ->exists();
+    if (!$exists) {
+        abort(404);
+    }
+
+    // Daftar LOP untuk mitra tertentu + status mismatch (cek detail designator)
     $items = DB::table('rekon_items')
-        ->select('lop_name')
+        ->select(
+            'lop_name',
+            DB::raw('MAX(CASE WHEN qty_gudang != qty_mitra OR qty_ta != qty_mitra THEN 1 ELSE 0 END) as has_diff')
+        )
         ->where('project_id', $id)
         ->where('mitra_name', $mitra)
         ->groupBy('lop_name')
@@ -362,6 +545,16 @@ private function parseTemplate($file, ?string $expectedSource = null)
 
    public function detail($id, $mitra, $lop)
 {
+    // Pastikan kombinasi mitra + lop memang ada di project ini (kalau tidak, 404)
+    $exists = DB::table('rekon_items')
+        ->where('project_id', $id)
+        ->where('mitra_name', $mitra)
+        ->where('lop_name', $lop)
+        ->exists();
+    if (!$exists) {
+        abort(404);
+    }
+
     // Detail designator per LOP & Mitra dengan selisih
     $rows = DB::table('rekon_items')
         ->where('project_id', $id)

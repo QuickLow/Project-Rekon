@@ -10,12 +10,23 @@
     <style>
         body { background-color: #F3F4F6; }
         .sidebar { background-color: #EE2E24; min-height: 100vh; color: white; }
-        .sidebar .nav-link { color: rgba(255,255,255,0.8); margin-bottom: 5px; }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            margin-bottom: 5px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            padding: 0.6rem 0.9rem;
+        }
+        .sidebar .nav-link i { width: 1.25rem; text-align: center; }
         .sidebar .nav-link:hover, .sidebar .nav-link.active {
             background-color: white;
             color: #EE2E24;
             font-weight: bold;
         }
+        .sidebar .nav-link:focus { box-shadow: none; }
+
+        .sidebar-brand { font-size: 1.5rem; font-weight: bold; padding: 1.5rem 1rem; letter-spacing: 2px; }
 
         .upload-box {
             border: 2px dashed #ccc;
@@ -46,32 +57,98 @@
 <body>
 
 <div class="container-fluid">
+    <!-- Mobile Sidebar (Offcanvas) -->
+    <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
+        <div class="offcanvas-header" style="background-color:#EE2E24;color:white;">
+            <h5 class="offcanvas-title" id="mobileSidebarLabel"><i class="fas fa-network-wired me-2"></i>REKON</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body p-0">
+            <div class="sidebar p-3 d-flex flex-column" style="min-height:auto;">
+                <ul class="nav flex-column flex-grow-1">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ route('dashboard') }}">
+                            <i class="fas fa-tachometer-alt me-2"></i> Dashboard
+                        </a>
+                    </li>
+                    @if(auth()->user()?->canUpload())
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ route('upload') }}">
+                                <i class="fas fa-upload me-2"></i> Upload Data
+                            </a>
+                        </li>
+                    @endif
+                    @if(auth()->user()?->isSuperAdmin())
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ route('admin.users') }}">
+                                <i class="fas fa-user-cog me-2"></i> Kelola User
+                            </a>
+                        </li>
+                    @endif
+                    <li class="nav-item mt-auto pt-3">
+                        <form method="POST" action="{{ route('logout') }}" onsubmit="return confirm('Yakin ingin keluar?');">
+                            @csrf
+                            <button type="submit" class="nav-link w-100 text-start" style="border: none;">
+                                <i class="fas fa-sign-out-alt me-2"></i> Keluar
+                            </button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
-        <div class="col-md-2 sidebar p-3">
-            <div class="mb-4 p-3 fs-4 fw-bold">
+        <div class="col-md-2 sidebar p-3 d-none d-md-flex flex-column">
+            <div class="sidebar-brand mb-4">
                 <i class="fas fa-network-wired"></i> REKON
             </div>
-            <ul class="nav flex-column">
+            <ul class="nav flex-column flex-grow-1">
                 <li class="nav-item">
                     <a class="nav-link" href="{{ route('dashboard') }}">
                         <i class="fas fa-tachometer-alt me-2"></i> Dashboard
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link active" href="{{ route('upload') }}">
-                        <i class="fas fa-upload me-2"></i> Upload Data
-                    </a>
-                </li>
-                 <li class="nav-item mt-5">
-                    <a class="nav-link" href="#">
-                        <i class="fas fa-sign-out-alt me-2"></i> Keluar
-                    </a>
+                @if(auth()->user()?->canUpload())
+                    <li class="nav-item">
+                        <a class="nav-link active" href="{{ route('upload') }}">
+                            <i class="fas fa-upload me-2"></i> Upload Data
+                        </a>
+                    </li>
+                @endif
+                @if(auth()->user()?->isSuperAdmin())
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ route('admin.users') }}">
+                            <i class="fas fa-user-cog me-2"></i> Kelola User
+                        </a>
+                    </li>
+                @endif
+                <li class="nav-item mt-auto pt-3">
+                    <form method="POST" action="{{ route('logout') }}" onsubmit="return confirm('Yakin ingin keluar?');">
+                        @csrf
+                        <button type="submit" class="nav-link w-100 text-start" style="border: none;">
+                            <i class="fas fa-sign-out-alt me-2"></i> Keluar
+                        </button>
+                    </form>
                 </li>
             </ul>
         </div>
 
-        <div class="col-md-10 p-5">
-            <h3 class="mb-4">Upload Data Baru</h3>
+        <div class="col-12 col-md-10 p-4 p-md-5">
+            <div class="d-flex d-md-none align-items-center justify-content-between mb-3">
+                <button class="btn btn-outline-danger" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar" aria-controls="mobileSidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="fw-bold">REKON</div>
+                <div style="width:42px;"></div>
+            </div>
+            <h3 class="mb-4">
+                @if(!empty($project))
+                    Upload Ulang (Timpa) - {{ $project->project_name }}
+                @else
+                    Upload Data Baru
+                @endif
+            </h3>
 
             {{-- ERROR BLOCK --}}
             @if(session('error'))
@@ -87,17 +164,22 @@
                 </div>
             @endif
 
-            <form action="/upload" method="POST" enctype="multipart/form-data">
+            <form action="{{ route('upload.store') }}" method="POST" enctype="multipart/form-data">
 
 
                 @csrf
 
+                @if(!empty($project))
+                    <input type="hidden" name="project_id" value="{{ $project->id }}">
+                @endif
+
                 <div class="card p-4 mb-4 border-0 shadow-sm">
-                    <label class="fw-bold mb-2">Nama Batch / Project</label>
+                      <label class="fw-bold mb-2">Nomor PO</label>
                     <input type="text"
                            name="project_name"
                            class="form-control form-control-lg"
-                           {{-- placeholder="Contoh: Rekon STO Pontianak Oktober 2025" --}}
+                          value="{{ old('project_name', !empty($project) ? $project->project_name : '') }}"
+                          placeholder="Contoh: 5500012381"
                            required>
                 </div>
 
@@ -119,7 +201,6 @@
                                     <i class="fas fa-file-excel upload-icon"></i>
                                     <h5>Klik untuk Upload Excel/CSV</h5>
                                     <p class="text-muted small">Format: .xlsx / .xls / .csv</p>
-                                    <p class="text-muted small mb-0">Gunakan template terbaru (baris <b>REKON_TEMPLATE</b> jangan dihapus). File yang tertukar akan ditolak.</p>
                                     <div id="preview_gudang" class="text-success fw-bold mt-2"></div>
                                 </label>
                                     <input type="file" accept=".xlsx,.xls,.csv,.xlsm,.xlsb"
@@ -148,7 +229,6 @@
                                     <i class="fas fa-file-excel upload-icon"></i>
                                     <h5>Klik untuk Upload Excel/CSV</h5>
                                     <p class="text-muted small">Format: .xlsx / .xls / .csv</p>
-                                    <p class="text-muted small mb-0">Gunakan template terbaru (baris <b>REKON_TEMPLATE</b> jangan dihapus). File yang tertukar akan ditolak.</p>
                                     <div id="preview_telkom" class="text-success fw-bold mt-2"></div>
                                 </label>
                                     <input type="file" accept=".xlsx,.xls,.csv,.xlsm,.xlsb"
@@ -178,7 +258,6 @@
                                     <i class="fas fa-file-excel upload-icon"></i>
                                     <h5>Klik untuk Upload Excel/CSV</h5>
                                     <p class="text-muted small">Format: .xlsx / .xls / .csv</p>
-                                    <p class="text-muted small mb-0">Gunakan template terbaru (baris <b>REKON_TEMPLATE</b> jangan dihapus). File yang tertukar akan ditolak.</p>
                                     <div id="preview_mitra" class="text-success fw-bold mt-2"></div>
                                 </label>
                                     <input type="file" accept=".xlsx,.xls,.csv,.xlsm,.xlsb"
@@ -202,6 +281,7 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     function showFileName(inputId, previewId) {
         let input = document.getElementById(inputId);
