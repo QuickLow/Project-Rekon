@@ -251,8 +251,23 @@ class RekonController extends Controller
         $rowsMitra  = $this->parseTemplate($mitraFile, 'MITRA');
 
         // GABUNGKAN BERDASARKAN (MITRA, LOP, DESIGNATOR)
+        // Loop MITRA dulu agar urutan insert ke DB mengikuti urutan file Mitra
         $index = [];
 
+        foreach ($rowsMitra as $r) {
+            $key = strtoupper(trim($r['mitra'])) . '|' . strtoupper(trim($r['lop'])) . '|' . strtoupper(trim($r['designator']));
+            if (!isset($index[$key])) {
+                $index[$key] = [
+                    'mitra_name' => trim($r['mitra']),
+                    'lop_name' => trim($r['lop']),
+                    'designator' => trim($r['designator']),
+                    'qty_gudang' => 0,
+                    'qty_ta' => 0,
+                    'qty_mitra' => 0,
+                ];
+            }
+            $index[$key]['qty_mitra'] += (float)($r['jumlah'] ?? 0);
+        }
         foreach ($rowsGudang as $r) {
             $key = strtoupper(trim($r['mitra'])) . '|' . strtoupper(trim($r['lop'])) . '|' . strtoupper(trim($r['designator']));
             if (!isset($index[$key])) {
@@ -280,20 +295,6 @@ class RekonController extends Controller
                 ];
             }
             $index[$key]['qty_ta'] += (float)($r['jumlah'] ?? 0);
-        }
-        foreach ($rowsMitra as $r) {
-            $key = strtoupper(trim($r['mitra'])) . '|' . strtoupper(trim($r['lop'])) . '|' . strtoupper(trim($r['designator']));
-            if (!isset($index[$key])) {
-                $index[$key] = [
-                    'mitra_name' => trim($r['mitra']),
-                    'lop_name' => trim($r['lop']),
-                    'designator' => trim($r['designator']),
-                    'qty_gudang' => 0,
-                    'qty_ta' => 0,
-                    'qty_mitra' => 0,
-                ];
-            }
-            $index[$key]['qty_mitra'] += (float)($r['jumlah'] ?? 0);
         }
 
         $uniqueCount = count($index);
@@ -565,7 +566,7 @@ private function parseTemplate($file, ?string $source = null)
               ->orWhere('qty_ta', '!=', 0)
               ->orWhere('qty_mitra', '!=', 0);
         })
-        ->orderBy('designator')
+        ->orderBy('id')
         ->get();
 
     $detail = [];
