@@ -29,7 +29,7 @@
     <!-- Mobile Sidebar (Offcanvas) -->
     <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
         <div class="offcanvas-header" style="background-color:#EE2E24;color:white;">
-            <h5 class="offcanvas-title" id="mobileSidebarLabel"><i class="fas fa-network-wired me-2"></i>REKON</h5>
+            <h5 class="offcanvas-title" id="mobileSidebarLabel"><i class="fas fa-network-wired me-2"></i>SIRMA</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body p-0">
@@ -58,7 +58,7 @@
     <div class="row">
         <div class="col-md-2 sidebar p-3 d-none d-md-flex flex-column">
             <div class="sidebar-brand mb-4">
-                <i class="fas fa-network-wired"></i> REKON
+                <i class="fas fa-network-wired"></i> SIRMA
             </div>
             <ul class="nav flex-column flex-grow-1">
                 <li class="nav-item"><a class="nav-link" href="{{ route('dashboard') }}"><i class="fas fa-tachometer-alt me-2"></i> Dashboard</a></li>
@@ -84,7 +84,7 @@
                 <button class="btn btn-outline-secondary" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar" aria-controls="mobileSidebar">
                     <i class="fas fa-bars"></i>
                 </button>
-                <div class="fw-bold" style="letter-spacing:2px;">REKON</div>
+                <div class="fw-bold" style="letter-spacing:2px;">SIRMA</div>
                 <div style="width: 42px;"></div>
             </div>
             <nav aria-label="breadcrumb" class="mb-3">

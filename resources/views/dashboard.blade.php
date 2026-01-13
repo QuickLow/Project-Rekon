@@ -51,7 +51,7 @@
     <!-- Mobile Sidebar (Offcanvas) -->
     <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
         <div class="offcanvas-header" style="background-color:#EE2E24;color:white;">
-            <h5 class="offcanvas-title" id="mobileSidebarLabel"><i class="fas fa-network-wired me-2"></i>REKON</h5>
+            <h5 class="offcanvas-title" id="mobileSidebarLabel"><i class="fas fa-network-wired me-2"></i>SIRMA</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
         </div>
         <div class="offcanvas-body p-0">
@@ -92,7 +92,7 @@
     <div class="row">
         <div class="col-md-2 sidebar p-3 d-none d-md-flex flex-column">
             <div class="sidebar-brand mb-4">
-                <i class="fas fa-network-wired"></i> REKON
+                <i class="fas fa-network-wired"></i> SIRMA
             </div>
             <ul class="nav flex-column flex-grow-1">
                 <li class="nav-item">

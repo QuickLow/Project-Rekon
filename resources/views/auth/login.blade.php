@@ -42,7 +42,7 @@
     <div class="row justify-content-center align-items-center" style="min-height: 100vh;">
         <div class="col-md-5">
             <div class="text-center mb-3">
-                <div class="brand"><i class="fas fa-network-wired me-2"></i>REKON</div>
+                <div class="brand"><i class="fas fa-network-wired me-2"></i>SIRMA</div>
                 <div class="text-muted small">Silakan login untuk melanjutkan</div>
             </div>
 
